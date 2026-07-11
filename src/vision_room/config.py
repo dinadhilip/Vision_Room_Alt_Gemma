@@ -21,7 +21,9 @@ class Settings(BaseSettings):
     embedding_dims: int = 256
 
     litert_base_url: str | None = None
+    litert_api_key: str | None = None
     litert_model: str = "gemma-4-local"
+    litert_timeout_s: float = 30.0
     nb2_lite_endpoint: str | None = None
     nb2_lite_api_key: str | None = None
     omni_flash_endpoint: str | None = None
@@ -58,4 +60,3 @@ def get_settings() -> Settings:
     settings = Settings()
     settings.ensure_dirs()
     return settings
-

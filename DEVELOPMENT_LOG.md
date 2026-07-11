@@ -8,6 +8,8 @@
 - Added demo ingestion that creates three verifiable local keyframes when no index exists.
 - Added NB2 Lite and Omni Flash provider wrappers with deterministic demo fallbacks for offline judging.
 - Added a sessionful rule-based orchestrator matching the planned search → cast → synthesize flow.
+- Added optional OpenAI-compatible local Gemma planner support through `VISION_ROOM_LITERT_BASE_URL`.
+- Added `POST /ingest/frame` so agents can add captioned frames to the local index over HTTP.
 - Added a static single-surface chat UI that reacts to tool outcomes without user-visible mode switches.
 - Added pytest coverage for the orchestrated flow and bridge endpoint behavior.
 - Verified with `ruff check`, `pytest`, `/health`, frontend `HEAD /`, and sequential `/chat` smoke turns for search, cast, and synthesize.

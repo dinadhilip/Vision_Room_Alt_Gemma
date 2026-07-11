@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from .providers import CastProvider, VideoProvider
+from .local_agent import LocalGemmaPlanner, PlannedReply, PlannedToolCall
 from .search_tool import SearchHit, VideoSearchTool
 
 
@@ -56,11 +57,13 @@ class AgentOrchestrator:
         video_provider: VideoProvider,
         *,
         search_confidence_threshold: float = 0.18,
+        local_planner: LocalGemmaPlanner | None = None,
     ) -> None:
         self.search_tool = search_tool
         self.cast_provider = cast_provider
         self.video_provider = video_provider
         self.search_confidence_threshold = search_confidence_threshold
+        self.local_planner = local_planner
 
     def handle_turn(self, session: SessionState, message: str) -> dict:
         with session.lock:
@@ -70,7 +73,10 @@ class AgentOrchestrator:
         clean_message = message.strip()
         session.conversation_history.append(ChatMessage(role="user", content=clean_message))
 
-        if self._should_synthesize(session, clean_message):
+        planned_response = self._try_local_planner(session)
+        if planned_response is not None:
+            response = planned_response
+        elif self._should_synthesize(session, clean_message):
             response = self._synthesize(session, clean_message)
         elif APPROVAL_RE.search(clean_message) and session.matched_frames and not session.anchor_frames:
             response = {
@@ -87,8 +93,63 @@ class AgentOrchestrator:
         response["state"] = self._public_state(session)
         return response
 
-    def _search(self, session: SessionState, query: str) -> dict:
-        hits = self.search_tool.search_video_library(query, top_k=3)
+    def _try_local_planner(self, session: SessionState) -> dict | None:
+        if self.local_planner is None:
+            return None
+        try:
+            decision = self.local_planner.plan(
+                system_prompt=SYSTEM_PROMPT,
+                history=[
+                    {"role": message.role, "content": message.content}
+                    for message in session.conversation_history[-12:]
+                ],
+                state=self._public_state(session),
+            )
+        except Exception:
+            return None
+
+        if isinstance(decision, PlannedReply):
+            return {"reply": decision.reply, "ui_action": {"type": "none", "payload": {}}}
+        if isinstance(decision, PlannedToolCall):
+            return self._execute_planned_tool(session, decision)
+        return None
+
+    def _execute_planned_tool(self, session: SessionState, decision: PlannedToolCall) -> dict | None:
+        args = decision.arguments
+        if decision.name == "search_video_library":
+            return self._search(session, str(args.get("query") or ""), int(args.get("top_k") or 3))
+        if decision.name == "cast_into_frame":
+            casting_prompt = str(args.get("casting_prompt") or "").strip()
+            if not casting_prompt:
+                return None
+            base_frame_path = str(args.get("base_frame_path") or "").strip()
+            if base_frame_path:
+                result = self.cast_provider.cast_into_frame(
+                    base_frame_path,
+                    casting_prompt,
+                    args.get("reference_image_path"),
+                )
+                session.casting_prompt = casting_prompt
+                session.anchor_frames = [result["frame_path"]]
+                return self._cast_response(result, casting_prompt)
+            return self._cast(session, casting_prompt)
+        if decision.name == "synthesize_video":
+            anchor_paths = args.get("anchor_frame_paths")
+            if isinstance(anchor_paths, list) and anchor_paths:
+                session.anchor_frames = [str(path) for path in anchor_paths]
+            narrative_hint = str(args.get("narrative_hint") or "").strip()
+            if narrative_hint:
+                return self._synthesize_with_args(
+                    session,
+                    narrative_hint=narrative_hint,
+                    duration_hint_s=int(args.get("duration_hint_s") or 15),
+                    edit_instruction=args.get("edit_instruction"),
+                    prior_video_id=args.get("prior_video_id"),
+                )
+        return None
+
+    def _search(self, session: SessionState, query: str, top_k: int = 3) -> dict:
+        hits = self.search_tool.search_video_library(query, top_k=top_k)
         session.last_hits = hits
         session.matched_frames = [hit.record.id for hit in hits]
         session.confirmed_frame = hits[0].record.id if hits else None
@@ -131,6 +192,10 @@ class AgentOrchestrator:
         session.casting_prompt = casting_prompt
         session.anchor_frames = [result["frame_path"]]
 
+        return self._cast_response(result, casting_prompt)
+
+    @staticmethod
+    def _cast_response(result: dict, casting_prompt: str) -> dict:
         return {
             "reply": "I made an anchor frame from that match. Approve it when it feels right, or ask for a revision.",
             "ui_action": {
@@ -163,11 +228,33 @@ class AgentOrchestrator:
         prior = session.video_history[-1]["video_id"] if session.video_history else None
         edit_instruction = message if prior and REVISION_RE.search(message) else None
         narrative_hint = self._compose_narrative(session, message)
+        return self._synthesize_with_args(
+            session,
+            narrative_hint=narrative_hint,
+            edit_instruction=edit_instruction,
+            prior_video_id=prior if edit_instruction else None,
+        )
+
+    def _synthesize_with_args(
+        self,
+        session: SessionState,
+        *,
+        narrative_hint: str,
+        duration_hint_s: int = 15,
+        edit_instruction: str | None = None,
+        prior_video_id: str | None = None,
+    ) -> dict:
+        if not session.anchor_frames:
+            return {
+                "reply": "I need an approved anchor frame first. Tell me what to cast into the matched frame.",
+                "ui_action": {"type": "none", "payload": {}},
+            }
         result = self.video_provider.synthesize_video(
             session.anchor_frames,
             narrative_hint,
+            duration_hint_s=duration_hint_s,
             edit_instruction=edit_instruction,
-            prior_video_id=prior if edit_instruction else None,
+            prior_video_id=prior_video_id,
         )
         session.video_history.append(result)
 
