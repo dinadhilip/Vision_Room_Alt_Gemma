@@ -3,11 +3,12 @@ const input = document.querySelector("#messageInput");
 const messages = document.querySelector("#messages");
 const surface = document.querySelector("#visualSurface");
 const status = document.querySelector("#status");
-const uploadForm = document.querySelector("#uploadForm");
-const frameFile = document.querySelector("#frameFile");
-const frameCaption = document.querySelector("#frameCaption");
+const loadFolderForm = document.querySelector("#loadFolderForm");
+const folderPath = document.querySelector("#folderPath");
+const ingestStatusText = document.querySelector("#ingestStatus");
 const skillStatus = document.querySelector("#skillStatus");
 const resetSession = document.querySelector("#resetSession");
+let ingestPollInterval = null;
 
 let sessionId = localStorage.getItem("vision-room-session");
 
@@ -40,29 +41,54 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-uploadForm.addEventListener("submit", async (event) => {
+loadFolderForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!frameFile.files.length || !frameCaption.value.trim()) return;
+  const path = folderPath.value.trim();
+  if (!path) return;
 
-  status.textContent = "Indexing";
-  const body = new FormData();
-  body.append("frame", frameFile.files[0]);
-  body.append("caption", frameCaption.value.trim());
-  body.append("video_id", "frontend_upload");
-  body.append("timestamp_s", "0");
-
+  status.textContent = "Starting Index...";
   try {
-    const response = await fetch("/ingest/frame", { method: "POST", body });
+    const response = await fetch("/ingest/local-folder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder_path: path }),
+    });
     const payload = await response.json();
-    appendMessage("assistant", `Indexed: ${payload.frame.caption}`);
-    frameFile.value = "";
-    frameCaption.value = "";
-    status.textContent = "Ready";
+    if (payload.error) {
+      appendMessage("assistant", `Ingestion error: ${payload.error}`);
+      status.textContent = "Ready";
+      return;
+    }
+    
+    appendMessage("assistant", `Started indexing folder: ${path}`);
+    folderPath.value = "";
+    
+    // Start polling status
+    if (ingestPollInterval) clearInterval(ingestPollInterval);
+    ingestPollInterval = setInterval(pollIngestStatus, 1000);
   } catch (error) {
-    appendMessage("assistant", "I could not index that frame yet.");
+    appendMessage("assistant", "I could not start indexing that folder.");
     status.textContent = "Ready";
   }
 });
+
+async function pollIngestStatus() {
+  try {
+    const response = await fetch("/ingest/status");
+    const payload = await response.json();
+    
+    ingestStatusText.textContent = `Status: ${payload.progress} (Indexed: ${payload.indexed_frames})`;
+    
+    if (!payload.is_running && payload.progress.includes("Finished")) {
+      clearInterval(ingestPollInterval);
+      status.textContent = "Ready";
+      appendMessage("assistant", `Indexing complete. ${payload.indexed_frames} total frames in index.`);
+      loadSkillStatus(); // Refresh skills to show semantic search is ready
+    }
+  } catch (error) {
+    console.error("Failed to poll ingest status:", error);
+  }
+}
 
 resetSession.addEventListener("click", async () => {
   if (!sessionId) {
@@ -86,13 +112,13 @@ async function loadSkillStatus() {
   try {
     const response = await fetch("/skills");
     const payload = await response.json();
-    renderSkillStatus(payload.components || []);
+    renderSkillStatus(payload.components || [], payload.model_manager);
   } catch (error) {
     skillStatus.innerHTML = "";
   }
 }
 
-function renderSkillStatus(components) {
+function renderSkillStatus(components, modelManager) {
   skillStatus.innerHTML = "";
   components.forEach((component) => {
     const chip = document.createElement("span");
@@ -106,6 +132,14 @@ function renderSkillStatus(components) {
       .replace("on_demand_index_backend", "Index");
     skillStatus.appendChild(chip);
   });
+  
+  if (modelManager) {
+    const healthChip = document.createElement("span");
+    healthChip.className = `skill-chip ${modelManager.healthy ? 'configured' : 'deterministic_fallback'}`;
+    healthChip.title = modelManager.healthy ? 'Models loaded' : 'Models unavailable';
+    healthChip.textContent = `Models: ${modelManager.healthy ? 'OK' : 'Error'}`;
+    skillStatus.appendChild(healthChip);
+  }
 }
 
 function appendMessage(role, text) {
@@ -124,6 +158,9 @@ function renderAction(action) {
   if (action.type === "show_generated_video") {
     renderGeneratedVideo(action.payload);
   }
+  if (action.type === "show_storyboard") {
+    renderStoryboard(action.payload);
+  }
 }
 
 function renderFrameGallery(payload) {
@@ -140,7 +177,7 @@ function renderFrameGallery(payload) {
 
   const caption = document.createElement("div");
   caption.className = "caption";
-  caption.textContent = primary.caption || "";
+  caption.textContent = providerLine(primary.caption || "", primary);
   surface.appendChild(caption);
 
   if (frames.length > 1) {
@@ -193,8 +230,49 @@ function renderGeneratedVideo(payload) {
 
   const caption = document.createElement("div");
   caption.className = "caption";
-  caption.textContent = `Generated preview ${payload.video_id}`;
+  caption.textContent = providerLine(`Generated preview ${payload.video_id}`, payload);
   surface.appendChild(caption);
+}
+
+function renderStoryboard(payload) {
+  surface.innerHTML = "";
+  
+  const container = document.createElement("div");
+  container.className = `storyboard-container storyboard-${payload.style}`;
+  
+  const title = document.createElement("h2");
+  title.className = "storyboard-title";
+  title.textContent = `Storyboard: ${payload.story}`;
+  container.appendChild(title);
+  
+  const grid = document.createElement("div");
+  grid.className = "storyboard-grid";
+  
+  payload.frames.forEach((frame, index) => {
+    const panel = document.createElement("div");
+    panel.className = "storyboard-panel";
+    
+    const img = document.createElement("img");
+    img.src = assetUrl(frame.frame_path);
+    img.alt = `Panel ${index + 1}`;
+    
+    const caption = document.createElement("div");
+    caption.className = "panel-caption";
+    caption.textContent = `Panel ${index + 1}: ${providerLine("", frame)}`;
+    
+    panel.append(img, caption);
+    grid.appendChild(panel);
+  });
+  
+  container.appendChild(grid);
+  surface.appendChild(container);
+}
+
+function providerLine(text, payload) {
+  const provider = payload.provider ? ` · ${payload.provider}` : "";
+  const fallback = payload.fallback ? " · fallback" : "";
+  const attempts = payload.attempts ? ` · ${payload.attempts} attempt${payload.attempts === 1 ? "" : "s"}` : "";
+  return `${text}${provider}${fallback}${attempts}`;
 }
 
 function assetUrl(path) {

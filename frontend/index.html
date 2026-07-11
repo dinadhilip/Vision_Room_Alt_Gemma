@@ -15,14 +15,14 @@
             <h1>Vision Room</h1>
           </div>
           <div class="stage-actions">
-            <form id="uploadForm" class="upload-form">
-              <input id="frameFile" name="frame" type="file" accept="image/*" />
-              <input id="frameCaption" name="caption" placeholder="Frame caption" />
-              <button type="submit">Index</button>
+            <form id="loadFolderForm" class="upload-form">
+              <input id="folderPath" name="folderPath" type="text" placeholder="/Absolute/path/to/folder" required />
+              <button type="submit">Load Folder</button>
             </form>
             <button id="resetSession" class="icon-command" type="button" title="Reset session">Reset</button>
             <div id="status" class="status">Ready</div>
           </div>
+          <div id="ingestStatus" class="ingest-status"></div>
         </div>
         <div id="skillStatus" class="skill-status" aria-label="Skill status"></div>
         <div id="visualSurface" class="visual-surface">

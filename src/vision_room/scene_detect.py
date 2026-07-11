@@ -62,7 +62,8 @@ def create_demo_index(store: IndexStore, embedding_model: HashEmbeddingModel, ou
 
 def extract_keyframes(video_path: Path, output_dir: Path, scene_threshold: float = 0.32) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    pattern = output_dir / f"{video_path.stem}_%04d.jpg"
+    safe_stem = "".join(c if c.isalnum() else "_" for c in video_path.stem)
+    pattern = output_dir / f"{safe_stem}_%04d.jpg"
     command = [
         "ffmpeg",
         "-hide_banner",
@@ -71,12 +72,14 @@ def extract_keyframes(video_path: Path, output_dir: Path, scene_threshold: float
         str(video_path),
         "-vf",
         f"select='gt(scene,{scene_threshold})',showinfo",
-        "-vsync",
+        "-fps_mode",
         "vfr",
+        "-strict",
+        "unofficial",
         str(pattern),
     ]
     subprocess.run(command, check=True, capture_output=True, text=True)
-    return sorted(output_dir.glob(f"{video_path.stem}_*.jpg"))
+    return sorted(output_dir.glob(f"{safe_stem}_*.jpg"))
 
 
 def _make_demo_frame(path: Path, caption: str, index: int) -> None:

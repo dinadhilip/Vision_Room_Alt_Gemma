@@ -10,7 +10,7 @@ from vision_room.agent_orchestrator import AgentOrchestrator, SessionRegistry
 from vision_room.embedding import HashEmbeddingModel
 from vision_room.index_store import IndexStore
 from vision_room.local_agent import PlannedToolCall
-from vision_room.providers import DemoCastProvider, DemoVideoProvider
+from vision_room.providers import DemoCastProvider, DemoVideoProvider, HttpCastProvider, HttpVideoProvider
 from vision_room.scene_detect import create_demo_index
 from vision_room.search_tool import VideoSearchTool
 
@@ -164,3 +164,39 @@ def test_ingest_frame_endpoint_indexes_upload(tmp_path: Path, monkeypatch) -> No
     )
     assert chat.status_code == 200
     assert "red emergency light" in chat.json()["ui_action"]["payload"]["primary"]["caption"]
+
+
+def test_http_providers_retry_then_fallback(tmp_path: Path, monkeypatch) -> None:
+    frame = tmp_path / "frame.png"
+    Image.new("RGB", (64, 36), (10, 20, 30)).save(frame)
+    calls = {"count": 0}
+
+    def failing_post(*_args, **_kwargs):
+        calls["count"] += 1
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr("vision_room.providers.httpx.post", failing_post)
+
+    cast_provider = HttpCastProvider(
+        "http://nb2.invalid",
+        None,
+        DemoCastProvider(tmp_path / "generated"),
+        retry_count=1,
+    )
+    cast = cast_provider.cast_into_frame(str(frame), "cast a silver robot")
+    assert cast["provider"] == "demo"
+    assert cast["fallback"] is True
+    assert cast["attempts"] == 2
+    assert calls["count"] == 2
+
+    video_provider = HttpVideoProvider(
+        "http://omni.invalid",
+        None,
+        DemoVideoProvider(tmp_path / "generated"),
+        retry_count=1,
+    )
+    video = video_provider.synthesize_video([cast["frame_path"]], "make a quick cut")
+    assert video["provider"] == "demo"
+    assert video["fallback"] is True
+    assert video["attempts"] == 2
+    assert calls["count"] == 4

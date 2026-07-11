@@ -18,16 +18,19 @@ class Settings(BaseSettings):
     generated_dir: Path = Path("data/generated")
     static_dir: Path = Path("frontend")
     search_confidence_threshold: float = 0.18
-    embedding_dims: int = 256
+    embedding_dims: int = 384
 
     litert_base_url: str | None = None
     litert_api_key: str | None = None
     litert_model: str = "gemma-4-local"
-    litert_timeout_s: float = 30.0
+    litert_timeout_s: float = 300.0
     nb2_lite_endpoint: str | None = None
     nb2_lite_api_key: str | None = None
+    nb2_lite_timeout_s: float = 90.0
     omni_flash_endpoint: str | None = None
     omni_flash_api_key: str | None = None
+    omni_flash_timeout_s: float = 180.0
+    provider_retry_count: int = 1
 
     @property
     def resolved_index_db_path(self) -> Path:

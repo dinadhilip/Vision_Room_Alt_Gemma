@@ -44,3 +44,4 @@ search results -> confirmed frame -> cast anchor frame -> synthesized video
 - `VISION_ROOM_NB2_LITE_ENDPOINT`: optional Nano Banana Lite provider.
 - `VISION_ROOM_OMNI_FLASH_ENDPOINT`: optional Omni Flash provider.
 - Missing or failing providers fall back to local deterministic demo outputs.
+- Cloud provider calls retry once by default, then return deterministic fallback output with `provider`, `fallback`, `attempts`, and `fallback_reason` metadata.

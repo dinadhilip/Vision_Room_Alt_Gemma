@@ -4,9 +4,11 @@ import re
 import threading
 import uuid
 from dataclasses import dataclass, field
+from typing import Any
 
 from .providers import CastProvider, VideoProvider
 from .local_agent import LocalGemmaPlanner, PlannedReply, PlannedToolCall
+from .semantic_search import SemanticSearcher
 from .search_tool import SearchHit, VideoSearchTool
 
 
@@ -68,14 +70,14 @@ class AgentOrchestrator:
 
     def __init__(
         self,
-        search_tool: VideoSearchTool,
+        searcher: SemanticSearcher,
         cast_provider: CastProvider,
         video_provider: VideoProvider,
         *,
-        search_confidence_threshold: float = 0.18,
+        search_confidence_threshold: float = 0.20,
         local_planner: LocalGemmaPlanner | None = None,
     ) -> None:
-        self.search_tool = search_tool
+        self.searcher = searcher
         self.cast_provider = cast_provider
         self.video_provider = video_provider
         self.search_confidence_threshold = search_confidence_threshold
@@ -164,6 +166,10 @@ class AgentOrchestrator:
                     edit_instruction=args.get("edit_instruction"),
                     prior_video_id=args.get("prior_video_id"),
                 )
+        if decision.name == "generate_storyboard":
+            story = str(args.get("story") or "").strip()
+            if story:
+                return self._generate_storyboard(session, story, args.get("style", "comic"))
         return None
 
     def handle_confirm_frame(self, session: SessionState, frame_id: str) -> dict:
@@ -203,7 +209,7 @@ class AgentOrchestrator:
         }
 
     def _search(self, session: SessionState, query: str, top_k: int = 3) -> dict:
-        hits = self.search_tool.search_video_library(query, top_k=top_k)
+        hits = self.searcher.search(query, top_k=top_k)
         session.last_hits = hits
         session.matched_frames = [hit.record.id for hit in hits]
         session.confirmed_frame = hits[0].record.id if hits else None
@@ -263,6 +269,9 @@ class AgentOrchestrator:
                         "frame_id": result["frame_id"],
                         "frame_path": result["frame_path"],
                         "caption": f"Cast frame: {casting_prompt}",
+                        "provider": result.get("provider"),
+                        "fallback": result.get("fallback", False),
+                        "attempts": result.get("attempts"),
                     },
                     "frames": [
                         {
@@ -270,6 +279,9 @@ class AgentOrchestrator:
                             "frame_path": result["frame_path"],
                             "caption": f"Cast frame: {casting_prompt}",
                             "score": 1.0,
+                            "provider": result.get("provider"),
+                            "fallback": result.get("fallback", False),
+                            "attempts": result.get("attempts"),
                         }
                     ],
                 },
@@ -292,6 +304,39 @@ class AgentOrchestrator:
             edit_instruction=edit_instruction,
             prior_video_id=prior if edit_instruction else None,
         )
+
+    def _generate_storyboard(self, session: SessionState, story: str, style: str) -> dict:
+        if not session.last_hits:
+            return {
+                "reply": "I need some matched frames to generate a storyboard. Please search for a scene first.",
+                "ui_action": {"type": "none", "payload": {}},
+            }
+            
+        storyboard_frames = []
+        # Generate storyboard frames using cast_provider for the top 3 hits
+        for hit in session.last_hits[:3]:
+            # We use the story as the casting prompt for each frame to adapt it to the storyboard
+            result = self.cast_provider.cast_into_frame(hit.record.frame_path, story)
+            storyboard_frames.append({
+                "frame_id": result["frame_id"],
+                "frame_path": result["frame_path"],
+                "caption": f"Storyboard frame: {story[:30]}...",
+                "provider": result.get("provider"),
+                "fallback": result.get("fallback", False),
+                "attempts": result.get("attempts"),
+            })
+            
+        return {
+            "reply": f"I've generated a {style}-style storyboard based on your story using the matching frames.",
+            "ui_action": {
+                "type": "show_storyboard",
+                "payload": {
+                    "story": story,
+                    "style": style,
+                    "frames": storyboard_frames
+                }
+            }
+        }
 
     def _synthesize_with_args(
         self,

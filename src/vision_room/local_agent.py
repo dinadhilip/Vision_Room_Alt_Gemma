@@ -60,6 +60,21 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_storyboard",
+            "description": "Generate a comic-style storyboard from a user's story based on matched frames.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "story": {"type": "string"},
+                    "style": {"type": "string", "default": "comic"},
+                },
+                "required": ["story"],
+            },
+        },
+    },
 ]
 
 

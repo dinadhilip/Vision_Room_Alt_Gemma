@@ -59,6 +59,7 @@ export VISION_ROOM_OMNI_FLASH_API_KEY="..."
 ```
 
 If a provider call fails, the bridge falls back to the local demo provider so the conversation can continue during a live demo.
+Provider responses include `provider`, `fallback`, and `attempts` metadata so the UI and logs show whether a result came from cloud or demo fallback.
 
 ## Add Local Frames
 

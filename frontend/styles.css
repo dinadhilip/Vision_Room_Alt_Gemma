@@ -54,8 +54,7 @@ input {
 }
 
 .upload-form {
-  display: grid;
-  grid-template-columns: 132px minmax(160px, 240px) auto;
+  display: flex;
   gap: 8px;
   align-items: center;
 }
@@ -73,10 +72,29 @@ input {
 .upload-form button {
   border: 0;
   border-radius: 8px;
-  padding: 9px 12px;
+  padding: 9px 16px;
   background: #f4d06f;
   color: #12161f;
   font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.upload-form button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(244, 208, 111, 0.2);
+}
+
+.upload-form button:active {
+  transform: translateY(0);
+}
+
+.ingest-status {
+  width: 100%;
+  margin-top: 12px;
+  font-size: 0.85rem;
+  color: #8ee3c8;
+  font-weight: 600;
 }
 
 .icon-command {
@@ -308,4 +326,45 @@ h1 {
     border-left: 0;
     border-top: 1px solid rgba(245, 247, 250, 0.12);
   }
+}
+
+.storyboard-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 960px;
+}
+
+.storyboard-title {
+  margin: 0;
+  font-size: 1.4rem;
+  color: #f5f7fa;
+}
+
+.storyboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.storyboard-panel {
+  display: flex;
+  flex-direction: column;
+  background: rgba(16, 19, 26, 0.52);
+  border: 2px solid #276f86;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.storyboard-panel img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.panel-caption {
+  padding: 12px;
+  font-size: 0.9rem;
+  color: #c9d4e2;
+  background: rgba(0, 0, 0, 0.4);
 }
