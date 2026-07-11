@@ -1,0 +1,202 @@
+from __future__ import annotations
+
+from io import BytesIO
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+from PIL import Image
+
+from vision_room.agent_orchestrator import AgentOrchestrator, SessionRegistry
+from vision_room.embedding import HashEmbeddingModel
+from vision_room.index_store import IndexStore
+from vision_room.local_agent import PlannedToolCall
+from vision_room.providers import DemoCastProvider, DemoVideoProvider, HttpCastProvider, HttpVideoProvider
+from vision_room.scene_detect import create_demo_index
+from vision_room.search_tool import VideoSearchTool
+
+
+class FakePlanner:
+    def __init__(self, decision: PlannedToolCall) -> None:
+        self.decision = decision
+
+    def plan(self, **_kwargs) -> PlannedToolCall:
+        return self.decision
+
+
+def build_orchestrator(tmp_path: Path, local_planner=None) -> AgentOrchestrator:
+    store = IndexStore(tmp_path / "frames.sqlite")
+    model = HashEmbeddingModel(128)
+    create_demo_index(store, model, tmp_path / "uploads")
+    return AgentOrchestrator(
+        VideoSearchTool(store, model),
+        DemoCastProvider(tmp_path / "generated"),
+        DemoVideoProvider(tmp_path / "generated"),
+        search_confidence_threshold=-1.0,
+        local_planner=local_planner,
+    )
+
+
+def test_search_cast_synthesize_flow(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator(tmp_path)
+    session = SessionRegistry().get("demo")
+
+    search = orchestrator.handle_turn(session, "find the pipe leaking near a valve")
+    assert search["ui_action"]["type"] == "show_frame_gallery"
+    assert "pipe" in search["ui_action"]["payload"]["primary"]["caption"]
+
+    cast = orchestrator.handle_turn(session, "cast a repair technician in a yellow jacket")
+    assert cast["ui_action"]["type"] == "show_frame_gallery"
+    assert Path(cast["ui_action"]["payload"]["primary"]["frame_path"]).exists()
+
+    video = orchestrator.handle_turn(session, "approved, make video")
+    assert video["ui_action"]["type"] == "show_generated_video"
+    assert video["ui_action"]["payload"]["video_id"].startswith("video_")
+
+
+def test_select_second_frame_before_casting(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator(tmp_path)
+    session = SessionRegistry().get("select")
+
+    search = orchestrator.handle_turn(session, "find a product shot")
+    second = search["ui_action"]["payload"]["frames"][1]
+
+    selected = orchestrator.handle_turn(session, "use the second frame")
+    assert selected["state"]["confirmed_frame"] == second["frame_id"]
+    assert selected["state"]["workflow_stage"] == "frame_confirmed"
+
+    cast = orchestrator.handle_turn(session, "cast a tiny tabletop robot")
+    assert cast["state"]["anchor_frames"]
+
+
+def test_local_gemma_planner_tool_decision_executes(tmp_path: Path) -> None:
+    planner = FakePlanner(
+        PlannedToolCall("search_video_library", {"query": "blue valve pipe leak", "top_k": 2})
+    )
+    orchestrator = build_orchestrator(tmp_path, local_planner=planner)
+    session = SessionRegistry().get("gemma")
+
+    response = orchestrator.handle_turn(session, "please find the relevant moment")
+
+    assert response["ui_action"]["type"] == "show_frame_gallery"
+    assert len(response["ui_action"]["payload"]["frames"]) == 2
+    assert "pipe" in response["ui_action"]["payload"]["primary"]["caption"]
+
+
+def test_bridge_health_and_chat(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VISION_ROOM_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("VISION_ROOM_INDEX_DB_PATH", "data/index/test.sqlite")
+    monkeypatch.setenv("VISION_ROOM_STATIC_DIR", str(Path.cwd() / "frontend"))
+
+    from vision_room import config
+    from vision_room import bridge_api
+
+    config.get_settings.cache_clear()
+    app = bridge_api.create_app()
+    client = TestClient(app)
+
+    health = client.get("/health")
+    assert health.status_code == 200
+    assert health.json()["indexed_frames"] == 3
+
+    skills = client.get("/skills")
+    assert skills.status_code == 200
+    assert [component["id"] for component in skills.json()["components"]] == [
+        "frontend_chat_gemma",
+        "semantic_search",
+        "nano_banana_lite",
+        "omni_flash",
+        "on_demand_index_backend",
+    ]
+
+    chat = client.post("/chat", json={"session_id": "x", "message": "find a product shot"})
+    assert chat.status_code == 200
+    assert chat.json()["ui_action"]["type"] == "show_frame_gallery"
+
+    second_frame = chat.json()["ui_action"]["payload"]["frames"][1]["frame_id"]
+    confirm = client.post(
+        "/session/confirm-frame",
+        json={"session_id": "x", "frame_id": second_frame},
+    )
+    assert confirm.status_code == 200
+    assert confirm.json()["state"]["confirmed_frame"] == second_frame
+
+    state = client.get("/session/x")
+    assert state.status_code == 200
+    assert state.json()["state"]["workflow_stage"] == "frame_confirmed"
+
+    reset = client.delete("/session/x")
+    assert reset.status_code == 200
+    assert reset.json()["state"]["workflow_stage"] == "idle"
+
+
+def test_ingest_frame_endpoint_indexes_upload(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VISION_ROOM_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("VISION_ROOM_INDEX_DB_PATH", "data/index/test.sqlite")
+    monkeypatch.setenv("VISION_ROOM_STATIC_DIR", str(Path.cwd() / "frontend"))
+
+    from vision_room import bridge_api
+    from vision_room import config
+
+    config.get_settings.cache_clear()
+    app = bridge_api.create_app()
+    client = TestClient(app)
+
+    image = Image.new("RGB", (64, 36), (20, 90, 120))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    buffer.seek(0)
+
+    ingest = client.post(
+        "/ingest/frame",
+        data={
+            "caption": "custom hallway scene with a red emergency light",
+            "video_id": "hallway-demo",
+            "timestamp_s": "9.5",
+        },
+        files={"frame": ("hallway.png", buffer, "image/png")},
+    )
+    assert ingest.status_code == 200
+    assert ingest.json()["indexed_frames"] == 4
+
+    chat = client.post(
+        "/chat",
+        json={"session_id": "uploaded", "message": "find the red emergency hallway light"},
+    )
+    assert chat.status_code == 200
+    assert "red emergency light" in chat.json()["ui_action"]["payload"]["primary"]["caption"]
+
+
+def test_http_providers_retry_then_fallback(tmp_path: Path, monkeypatch) -> None:
+    frame = tmp_path / "frame.png"
+    Image.new("RGB", (64, 36), (10, 20, 30)).save(frame)
+    calls = {"count": 0}
+
+    def failing_post(*_args, **_kwargs):
+        calls["count"] += 1
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr("vision_room.providers.httpx.post", failing_post)
+
+    cast_provider = HttpCastProvider(
+        "http://nb2.invalid",
+        None,
+        DemoCastProvider(tmp_path / "generated"),
+        retry_count=1,
+    )
+    cast = cast_provider.cast_into_frame(str(frame), "cast a silver robot")
+    assert cast["provider"] == "demo"
+    assert cast["fallback"] is True
+    assert cast["attempts"] == 2
+    assert calls["count"] == 2
+
+    video_provider = HttpVideoProvider(
+        "http://omni.invalid",
+        None,
+        DemoVideoProvider(tmp_path / "generated"),
+        retry_count=1,
+    )
+    video = video_provider.synthesize_video([cast["frame_path"]], "make a quick cut")
+    assert video["provider"] == "demo"
+    assert video["fallback"] is True
+    assert video["attempts"] == 2
+    assert calls["count"] == 4

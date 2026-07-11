@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vision Room</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="stage" aria-label="Vision preview">
+        <div class="stage-header">
+          <div>
+            <p class="eyebrow">Local Gemma Search · NB2 Anchor · Omni Flash Motion</p>
+            <h1>Vision Room</h1>
+          </div>
+          <div class="stage-actions">
+            <form id="loadFolderForm" class="upload-form">
+              <input id="folderPath" name="folderPath" type="text" placeholder="/Absolute/path/to/folder" required />
+              <button type="submit">Load Folder</button>
+            </form>
+            <button id="resetSession" class="icon-command" type="button" title="Reset session">Reset</button>
+            <div id="status" class="status">Ready</div>
+          </div>
+          <div id="ingestStatus" class="ingest-status"></div>
+        </div>
+        <div id="skillStatus" class="skill-status" aria-label="Skill status"></div>
+        <div id="visualSurface" class="visual-surface">
+          <div class="empty-state">
+            <span>Ask for a moment in your footage</span>
+          </div>
+        </div>
+      </section>
+
+      <aside class="chat-panel" aria-label="Conversation">
+        <div id="messages" class="messages"></div>
+        <form id="chatForm" class="composer">
+          <input
+            id="messageInput"
+            name="message"
+            autocomplete="off"
+            placeholder="Find where the pipe started leaking..."
+            required
+          />
+          <button type="submit">Send</button>
+        </form>
+      </aside>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
