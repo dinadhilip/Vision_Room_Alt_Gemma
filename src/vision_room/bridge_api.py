@@ -23,6 +23,11 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
 
 
+class ConfirmFrameRequest(BaseModel):
+    session_id: str = Field(min_length=1)
+    frame_id: str = Field(min_length=1)
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     store = IndexStore(settings.resolved_index_db_path)
@@ -70,6 +75,11 @@ def create_app() -> FastAPI:
     def chat(request: ChatRequest) -> dict:
         session = sessions.get(request.session_id)
         return orchestrator.handle_turn(session, request.message)
+
+    @app.post("/session/confirm-frame")
+    def confirm_frame(request: ConfirmFrameRequest) -> dict:
+        session = sessions.get(request.session_id)
+        return orchestrator.handle_confirm_frame(session, request.frame_id)
 
     @app.post("/ingest/frame")
     async def ingest_uploaded_frame(

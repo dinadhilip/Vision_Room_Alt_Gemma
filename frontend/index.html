@@ -14,7 +14,14 @@
             <p class="eyebrow">Local Gemma Search · NB2 Anchor · Omni Flash Motion</p>
             <h1>Vision Room</h1>
           </div>
-          <div id="status" class="status">Ready</div>
+          <div class="stage-actions">
+            <form id="uploadForm" class="upload-form">
+              <input id="frameFile" name="frame" type="file" accept="image/*" />
+              <input id="frameCaption" name="caption" placeholder="Frame caption" />
+              <button type="submit">Index</button>
+            </form>
+            <div id="status" class="status">Ready</div>
+          </div>
         </div>
         <div id="visualSurface" class="visual-surface">
           <div class="empty-state">
@@ -40,4 +47,3 @@
     <script src="/app.js" type="module"></script>
   </body>
 </html>
-

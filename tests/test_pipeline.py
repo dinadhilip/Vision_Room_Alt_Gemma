@@ -53,6 +53,21 @@ def test_search_cast_synthesize_flow(tmp_path: Path) -> None:
     assert video["ui_action"]["payload"]["video_id"].startswith("video_")
 
 
+def test_select_second_frame_before_casting(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator(tmp_path)
+    session = SessionRegistry().get("select")
+
+    search = orchestrator.handle_turn(session, "find a product shot")
+    second = search["ui_action"]["payload"]["frames"][1]
+
+    selected = orchestrator.handle_turn(session, "use the second frame")
+    assert selected["state"]["confirmed_frame"] == second["frame_id"]
+    assert selected["state"]["workflow_stage"] == "frame_confirmed"
+
+    cast = orchestrator.handle_turn(session, "cast a tiny tabletop robot")
+    assert cast["state"]["anchor_frames"]
+
+
 def test_local_gemma_planner_tool_decision_executes(tmp_path: Path) -> None:
     planner = FakePlanner(
         PlannedToolCall("search_video_library", {"query": "blue valve pipe leak", "top_k": 2})
@@ -86,6 +101,14 @@ def test_bridge_health_and_chat(tmp_path: Path, monkeypatch) -> None:
     chat = client.post("/chat", json={"session_id": "x", "message": "find a product shot"})
     assert chat.status_code == 200
     assert chat.json()["ui_action"]["type"] == "show_frame_gallery"
+
+    second_frame = chat.json()["ui_action"]["payload"]["frames"][1]["frame_id"]
+    confirm = client.post(
+        "/session/confirm-frame",
+        json={"session_id": "x", "frame_id": second_frame},
+    )
+    assert confirm.status_code == 200
+    assert confirm.json()["state"]["confirmed_frame"] == second_frame
 
 
 def test_ingest_frame_endpoint_indexes_upload(tmp_path: Path, monkeypatch) -> None:

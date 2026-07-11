@@ -3,6 +3,9 @@ const input = document.querySelector("#messageInput");
 const messages = document.querySelector("#messages");
 const surface = document.querySelector("#visualSurface");
 const status = document.querySelector("#status");
+const uploadForm = document.querySelector("#uploadForm");
+const frameFile = document.querySelector("#frameFile");
+const frameCaption = document.querySelector("#frameCaption");
 
 let sessionId = localStorage.getItem("vision-room-session");
 
@@ -34,6 +37,30 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
+uploadForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!frameFile.files.length || !frameCaption.value.trim()) return;
+
+  status.textContent = "Indexing";
+  const body = new FormData();
+  body.append("frame", frameFile.files[0]);
+  body.append("caption", frameCaption.value.trim());
+  body.append("video_id", "frontend_upload");
+  body.append("timestamp_s", "0");
+
+  try {
+    const response = await fetch("/ingest/frame", { method: "POST", body });
+    const payload = await response.json();
+    appendMessage("assistant", `Indexed: ${payload.frame.caption}`);
+    frameFile.value = "";
+    frameCaption.value = "";
+    status.textContent = "Ready";
+  } catch (error) {
+    appendMessage("assistant", "I could not index that frame yet.");
+    status.textContent = "Ready";
+  }
+});
+
 function appendMessage(role, text) {
   const element = document.createElement("div");
   element.className = `message ${role}`;
@@ -55,6 +82,7 @@ function renderAction(action) {
 function renderFrameGallery(payload) {
   const primary = payload.primary;
   const frames = payload.frames || [];
+  const confirmedFrame = payload.confirmed_frame || primary.frame_id;
   surface.innerHTML = "";
 
   const image = document.createElement("img");
@@ -72,8 +100,11 @@ function renderFrameGallery(payload) {
     const strip = document.createElement("div");
     strip.className = "thumb-strip";
     frames.forEach((frame) => {
-      const item = document.createElement("div");
-      item.className = "thumb";
+      const item = document.createElement("button");
+      item.className = `thumb ${frame.frame_id === confirmedFrame ? "selected" : ""}`;
+      item.type = "button";
+      item.title = "Select frame";
+      item.addEventListener("click", () => confirmFrame(frame.frame_id));
       const thumb = document.createElement("img");
       thumb.src = assetUrl(frame.frame_path);
       thumb.alt = frame.caption || "Alternative frame";
@@ -83,6 +114,25 @@ function renderFrameGallery(payload) {
       strip.appendChild(item);
     });
     surface.appendChild(strip);
+  }
+}
+
+async function confirmFrame(frameId) {
+  if (!sessionId || !frameId) return;
+  status.textContent = "Selecting";
+  try {
+    const response = await fetch("/session/confirm-frame", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, frame_id: frameId }),
+    });
+    const payload = await response.json();
+    appendMessage("assistant", payload.reply);
+    renderAction(payload.ui_action);
+    status.textContent = "Ready";
+  } catch (error) {
+    appendMessage("assistant", "I could not select that frame.");
+    status.textContent = "Ready";
   }
 }
 
@@ -110,4 +160,3 @@ function assetUrl(path) {
   if (generatedIndex >= 0) return `/assets/generated/${normalized.slice(generatedIndex + "/data/generated/".length)}`;
   return path;
 }
-

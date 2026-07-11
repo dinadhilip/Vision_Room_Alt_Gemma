@@ -12,9 +12,18 @@ The current repo includes a runnable demo spine. It is intentionally local-first
 - `POST /ingest/frame` for adding captioned local frames to the searchable index.
 - `cast_into_frame` provider interface with an NB2 Lite HTTP hook and an offline visual fallback.
 - `synthesize_video` provider interface with an Omni Flash HTTP hook and an offline preview manifest fallback.
+- Confirmed-frame sync across chat, clicked thumbnails, casting, and video synthesis.
 - Automatic demo index creation on first server start.
 - Static frontend that updates frame galleries and generated video previews inline.
 - Tests covering search → cast → synthesize plus bridge health/chat behavior.
+
+## Major Components
+
+1. Frontend chat Gemma agent skill: `frontend/` plus `/chat`, keeping one conversational surface.
+2. Semantic search skill: `search_video_library`, `IndexStore`, and local embeddings.
+3. Nano Banana Lite skill: `cast_into_frame` provider interface and offline fallback.
+4. Omni Flash skill: `synthesize_video` provider interface and offline preview fallback.
+5. On-demand indexing backend: `video_index_backend.py` skeleton for description → summary → embedding → vector upsert. The low-CPU scheduler is intentionally commented for later.
 
 ## Quick Start
 
@@ -71,6 +80,8 @@ src/vision_room/embedding.py           Local deterministic embedding fallback
 src/vision_room/search_tool.py         search_video_library implementation
 src/vision_room/providers.py           NB2 Lite / Omni Flash interfaces and fallbacks
 src/vision_room/scene_detect.py        Demo ingest and ffmpeg keyframe extraction
+src/vision_room/video_index_backend.py Later on-demand indexing skeleton
 frontend/                             Single chat surface UI
 tests/                                Pipeline and bridge tests
+docs/ARCHITECTURE.md                  Component and sync contract notes
 ```

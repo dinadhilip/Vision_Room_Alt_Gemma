@@ -15,6 +15,12 @@ SYSTEM_PROMPT = """You are a conversational video assistant. Use search_video_li
 APPROVAL_RE = re.compile(r"\b(approve|approved|looks good|use this|go ahead|make video|synthesize|render)\b", re.I)
 REVISION_RE = re.compile(r"\b(change|revise|instead|make it|swap|faster|slower|edit)\b", re.I)
 CAST_RE = re.compile(r"\b(cast|put|place|add|feature|with|wearing|holding|product|character)\b", re.I)
+SELECTION_RE = re.compile(
+    r"\b(?:use|select|choose|confirm|pick|swap(?:\s+in)?)(?:\s+the)?\s+"
+    r"(?P<choice>first|second|third|fourth|fifth|last|\d+)(?:st|nd|rd|th)?\b",
+    re.I,
+)
+ORDINALS = {"first": 0, "second": 1, "third": 2, "fourth": 3, "fifth": 4}
 
 
 @dataclass
@@ -76,6 +82,8 @@ class AgentOrchestrator:
         planned_response = self._try_local_planner(session)
         if planned_response is not None:
             response = planned_response
+        elif selection := self._selection_from_message(session, clean_message):
+            response = self.confirm_frame(session, selection)
         elif self._should_synthesize(session, clean_message):
             response = self._synthesize(session, clean_message)
         elif APPROVAL_RE.search(clean_message) and session.matched_frames and not session.anchor_frames:
@@ -148,11 +156,50 @@ class AgentOrchestrator:
                 )
         return None
 
+    def handle_confirm_frame(self, session: SessionState, frame_id: str) -> dict:
+        with session.lock:
+            response = self.confirm_frame(session, frame_id)
+            response["session_id"] = session.session_id
+            response["state"] = self._public_state(session)
+            return response
+
+    def confirm_frame(self, session: SessionState, frame_id: str) -> dict:
+        selected = None
+        for hit in session.last_hits:
+            if hit.record.id == frame_id:
+                selected = hit
+                break
+
+        if selected is None:
+            return {
+                "reply": "I could not find that frame in the current result set. Search again or pick one of the visible matches.",
+                "ui_action": {"type": "none", "payload": {}},
+            }
+
+        session.confirmed_frame = selected.record.id
+        session.casting_prompt = None
+        session.anchor_frames = []
+        session.video_history = []
+        return {
+            "reply": f"Selected the frame at {selected.record.timestamp_s:.1f}s. Tell me who or what to cast into it.",
+            "ui_action": {
+                "type": "show_frame_gallery",
+                "payload": {
+                    "primary": selected.to_public_dict(),
+                    "frames": [hit.to_public_dict() for hit in session.last_hits],
+                    "confirmed_frame": selected.record.id,
+                },
+            },
+        }
+
     def _search(self, session: SessionState, query: str, top_k: int = 3) -> dict:
         hits = self.search_tool.search_video_library(query, top_k=top_k)
         session.last_hits = hits
         session.matched_frames = [hit.record.id for hit in hits]
         session.confirmed_frame = hits[0].record.id if hits else None
+        session.casting_prompt = None
+        session.anchor_frames = []
+        session.video_history = []
 
         if not hits:
             return {
@@ -179,6 +226,7 @@ class AgentOrchestrator:
                 "payload": {
                     "primary": top.to_public_dict(),
                     "frames": [hit.to_public_dict() for hit in hits],
+                    "confirmed_frame": session.confirmed_frame,
                 },
             },
         }
@@ -281,8 +329,34 @@ class AgentOrchestrator:
         return bool(session.anchor_frames and (APPROVAL_RE.search(message) or session.video_history))
 
     @staticmethod
+    def _selection_from_message(session: SessionState, message: str) -> str | None:
+        if not session.last_hits:
+            return None
+        match = SELECTION_RE.search(message)
+        if not match:
+            return None
+        choice = match.group("choice").lower()
+        if choice == "last":
+            index = len(session.last_hits) - 1
+        elif choice in ORDINALS:
+            index = ORDINALS[choice]
+        elif choice.isdigit():
+            index = int(choice) - 1
+        else:
+            return None
+        if 0 <= index < len(session.last_hits):
+            return session.last_hits[index].record.id
+        return None
+
+    @staticmethod
     def _compose_narrative(session: SessionState, latest_message: str) -> str:
-        search_context = session.last_hits[0].record.caption if session.last_hits else "the selected local moment"
+        selected_hit = session.last_hits[0] if session.last_hits else None
+        if session.confirmed_frame:
+            selected_hit = next(
+                (hit for hit in session.last_hits if hit.record.id == session.confirmed_frame),
+                selected_hit,
+            )
+        search_context = selected_hit.record.caption if selected_hit else "the selected local moment"
         cast_context = session.casting_prompt or "the approved subject"
         return (
             f"Use the local moment '{search_context}' as the setup. Feature {cast_context}. "
@@ -296,4 +370,20 @@ class AgentOrchestrator:
             "confirmed_frame": session.confirmed_frame,
             "anchor_frames": session.anchor_frames,
             "video_history": session.video_history,
+            "workflow_stage": AgentOrchestrator._workflow_stage(session),
         }
+
+    def public_state(self, session: SessionState) -> dict:
+        return self._public_state(session)
+
+    @staticmethod
+    def _workflow_stage(session: SessionState) -> str:
+        if session.video_history:
+            return "video_ready"
+        if session.anchor_frames:
+            return "anchor_ready"
+        if session.confirmed_frame:
+            return "frame_confirmed"
+        if session.matched_frames:
+            return "matches_ready"
+        return "idle"
