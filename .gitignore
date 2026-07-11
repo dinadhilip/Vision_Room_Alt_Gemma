@@ -1,0 +1,12 @@
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.pyc
+*.sqlite
+*.db
+data/index/
+data/uploads/
+data/generated/
+!data/.gitkeep
+

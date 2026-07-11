@@ -1,0 +1,13 @@
+# Development Log
+
+## 2026-07-11
+
+- Cloned and initialized work against `dinadhilip/Vision_Room_Alt_Gemma` on `codex/local-agent-bridge`.
+- Added a FastAPI bridge with `/health` and `/chat` endpoints.
+- Added local SQLite frame index, deterministic hash embeddings, and cosine search for `search_video_library`.
+- Added demo ingestion that creates three verifiable local keyframes when no index exists.
+- Added NB2 Lite and Omni Flash provider wrappers with deterministic demo fallbacks for offline judging.
+- Added a sessionful rule-based orchestrator matching the planned search → cast → synthesize flow.
+- Added a static single-surface chat UI that reacts to tool outcomes without user-visible mode switches.
+- Added pytest coverage for the orchestrated flow and bridge endpoint behavior.
+- Verified with `ruff check`, `pytest`, `/health`, frontend `HEAD /`, and sequential `/chat` smoke turns for search, cast, and synthesize.
