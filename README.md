@@ -1,3 +1,5 @@
+Update : New Loom Video is out (Code is in a branch)!
+
 # Vision Room Alt Gemma
 
 Vision Room is an edge-to-cloud conversational video studio. It uses a local Gemma model to orchestrate searches over your local video footage, Nano Banana 2 Lite (NB2 Lite) to cast subjects into matching frames, and Omni Flash to synthesize a final video.
