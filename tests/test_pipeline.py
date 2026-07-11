@@ -98,6 +98,16 @@ def test_bridge_health_and_chat(tmp_path: Path, monkeypatch) -> None:
     assert health.status_code == 200
     assert health.json()["indexed_frames"] == 3
 
+    skills = client.get("/skills")
+    assert skills.status_code == 200
+    assert [component["id"] for component in skills.json()["components"]] == [
+        "frontend_chat_gemma",
+        "semantic_search",
+        "nano_banana_lite",
+        "omni_flash",
+        "on_demand_index_backend",
+    ]
+
     chat = client.post("/chat", json={"session_id": "x", "message": "find a product shot"})
     assert chat.status_code == 200
     assert chat.json()["ui_action"]["type"] == "show_frame_gallery"
@@ -109,6 +119,14 @@ def test_bridge_health_and_chat(tmp_path: Path, monkeypatch) -> None:
     )
     assert confirm.status_code == 200
     assert confirm.json()["state"]["confirmed_frame"] == second_frame
+
+    state = client.get("/session/x")
+    assert state.status_code == 200
+    assert state.json()["state"]["workflow_stage"] == "frame_confirmed"
+
+    reset = client.delete("/session/x")
+    assert reset.status_code == 200
+    assert reset.json()["state"]["workflow_stage"] == "idle"
 
 
 def test_ingest_frame_endpoint_indexes_upload(tmp_path: Path, monkeypatch) -> None:

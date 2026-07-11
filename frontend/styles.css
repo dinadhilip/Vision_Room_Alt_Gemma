@@ -79,6 +79,45 @@ input {
   font-weight: 800;
 }
 
+.icon-command {
+  border: 1px solid rgba(245, 247, 250, 0.18);
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: rgba(16, 19, 26, 0.72);
+  color: #f5f7fa;
+  font-weight: 700;
+}
+
+.skill-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -8px 0 18px;
+}
+
+.skill-chip {
+  border: 1px solid rgba(245, 247, 250, 0.16);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(16, 19, 26, 0.62);
+  color: #c9d4e2;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.skill-chip.ready,
+.skill-chip.configured {
+  border-color: rgba(142, 227, 200, 0.48);
+  color: #8ee3c8;
+}
+
+.skill-chip.demo_fallback,
+.skill-chip.deterministic_fallback,
+.skill-chip.skeleton {
+  border-color: rgba(244, 208, 111, 0.42);
+  color: #f4d06f;
+}
+
 .eyebrow {
   margin: 0 0 8px;
   color: #8ee3c8;

@@ -28,6 +28,44 @@ class ConfirmFrameRequest(BaseModel):
     frame_id: str = Field(min_length=1)
 
 
+def skill_status(settings, indexed_frames: int, session_count: int) -> dict:
+    return {
+        "components": [
+            {
+                "id": "frontend_chat_gemma",
+                "label": "Frontend chat Gemma agent skill",
+                "status": "configured" if settings.litert_base_url else "deterministic_fallback",
+                "detail": settings.litert_base_url or "rule-based planner active",
+            },
+            {
+                "id": "semantic_search",
+                "label": "Semantic search skill",
+                "status": "ready" if indexed_frames else "empty",
+                "detail": f"{indexed_frames} indexed frames",
+            },
+            {
+                "id": "nano_banana_lite",
+                "label": "Nano Banana Lite skill",
+                "status": "configured" if settings.nb2_lite_endpoint else "demo_fallback",
+                "detail": settings.nb2_lite_endpoint or "offline cast preview active",
+            },
+            {
+                "id": "omni_flash",
+                "label": "Omni Flash skill",
+                "status": "configured" if settings.omni_flash_endpoint else "demo_fallback",
+                "detail": settings.omni_flash_endpoint or "offline video preview active",
+            },
+            {
+                "id": "on_demand_index_backend",
+                "label": "On-demand indexing backend",
+                "status": "skeleton",
+                "detail": "description -> summary -> embedding -> vector upsert; CPU-idle scheduler commented",
+            },
+        ],
+        "sessions": {"active": session_count},
+    }
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     store = IndexStore(settings.resolved_index_db_path)
@@ -71,10 +109,36 @@ def create_app() -> FastAPI:
     def health() -> dict:
         return {"ok": True, "indexed_frames": store.count()}
 
+    @app.get("/skills")
+    def skills() -> dict:
+        return skill_status(settings, store.count(), sessions.count())
+
     @app.post("/chat")
     def chat(request: ChatRequest) -> dict:
         session = sessions.get(request.session_id)
         return orchestrator.handle_turn(session, request.message)
+
+    @app.get("/session/{session_id}")
+    def session_state(session_id: str) -> dict:
+        session = sessions.get_existing(session_id)
+        if session is None:
+            return {
+                "session_id": session_id,
+                "exists": False,
+                "state": {
+                    "matched_frames": [],
+                    "confirmed_frame": None,
+                    "anchor_frames": [],
+                    "video_history": [],
+                    "workflow_stage": "idle",
+                },
+            }
+        return {"session_id": session_id, "exists": True, "state": orchestrator.public_state(session)}
+
+    @app.delete("/session/{session_id}")
+    def reset_session(session_id: str) -> dict:
+        session = sessions.reset(session_id)
+        return {"session_id": session.session_id, "state": orchestrator.public_state(session)}
 
     @app.post("/session/confirm-frame")
     def confirm_frame(request: ConfirmFrameRequest) -> dict:

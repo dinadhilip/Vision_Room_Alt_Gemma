@@ -6,10 +6,13 @@ const status = document.querySelector("#status");
 const uploadForm = document.querySelector("#uploadForm");
 const frameFile = document.querySelector("#frameFile");
 const frameCaption = document.querySelector("#frameCaption");
+const skillStatus = document.querySelector("#skillStatus");
+const resetSession = document.querySelector("#resetSession");
 
 let sessionId = localStorage.getItem("vision-room-session");
 
 appendMessage("assistant", "Tell me what moment to find in your local footage.");
+loadSkillStatus();
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -60,6 +63,50 @@ uploadForm.addEventListener("submit", async (event) => {
     status.textContent = "Ready";
   }
 });
+
+resetSession.addEventListener("click", async () => {
+  if (!sessionId) {
+    surface.innerHTML = '<div class="empty-state"><span>Ask for a moment in your footage</span></div>';
+    return;
+  }
+  status.textContent = "Resetting";
+  try {
+    await fetch(`/session/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+    appendMessage("assistant", "Session reset. Tell me what moment to find next.");
+    surface.innerHTML = '<div class="empty-state"><span>Ask for a moment in your footage</span></div>';
+    status.textContent = "Ready";
+    await loadSkillStatus();
+  } catch (error) {
+    appendMessage("assistant", "I could not reset this session.");
+    status.textContent = "Ready";
+  }
+});
+
+async function loadSkillStatus() {
+  try {
+    const response = await fetch("/skills");
+    const payload = await response.json();
+    renderSkillStatus(payload.components || []);
+  } catch (error) {
+    skillStatus.innerHTML = "";
+  }
+}
+
+function renderSkillStatus(components) {
+  skillStatus.innerHTML = "";
+  components.forEach((component) => {
+    const chip = document.createElement("span");
+    chip.className = `skill-chip ${component.status}`;
+    chip.title = component.detail || component.label;
+    chip.textContent = component.id
+      .replace("frontend_chat_gemma", "Chat")
+      .replace("semantic_search", "Search")
+      .replace("nano_banana_lite", "NB Lite")
+      .replace("omni_flash", "Omni")
+      .replace("on_demand_index_backend", "Index");
+    skillStatus.appendChild(chip);
+  });
+}
 
 function appendMessage(role, text) {
   const element = document.createElement("div");

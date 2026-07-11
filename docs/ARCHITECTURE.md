@@ -35,6 +35,8 @@ search results -> confirmed frame -> cast anchor frame -> synthesized video
 - Casting always uses `confirmed_frame` when it exists.
 - Video synthesis requires at least one anchor frame unless a future speculative fallback is explicitly added.
 - Every tool response returns a `ui_action` so the frontend updates the visual surface without switching modes.
+- `GET /skills` reports configured versus fallback component status.
+- `GET /session/{session_id}` and `DELETE /session/{session_id}` support agent coordination and quick demo reset.
 
 ## Runtime Hooks
 
@@ -42,4 +44,3 @@ search results -> confirmed frame -> cast anchor frame -> synthesized video
 - `VISION_ROOM_NB2_LITE_ENDPOINT`: optional Nano Banana Lite provider.
 - `VISION_ROOM_OMNI_FLASH_ENDPOINT`: optional Omni Flash provider.
 - Missing or failing providers fall back to local deterministic demo outputs.
-

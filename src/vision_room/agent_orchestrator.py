@@ -52,6 +52,16 @@ class SessionRegistry:
             self._sessions[resolved_id] = SessionState(session_id=resolved_id)
         return self._sessions[resolved_id]
 
+    def get_existing(self, session_id: str) -> SessionState | None:
+        return self._sessions.get(session_id)
+
+    def reset(self, session_id: str) -> SessionState:
+        self._sessions[session_id] = SessionState(session_id=session_id)
+        return self._sessions[session_id]
+
+    def count(self) -> int:
+        return len(self._sessions)
+
 
 class AgentOrchestrator:
     """Rule-based agent loop with the same tool contract the Gemma loop will use."""

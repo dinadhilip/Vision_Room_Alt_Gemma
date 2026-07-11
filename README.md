@@ -13,6 +13,7 @@ The current repo includes a runnable demo spine. It is intentionally local-first
 - `cast_into_frame` provider interface with an NB2 Lite HTTP hook and an offline visual fallback.
 - `synthesize_video` provider interface with an Omni Flash HTTP hook and an offline preview manifest fallback.
 - Confirmed-frame sync across chat, clicked thumbnails, casting, and video synthesis.
+- Runtime skill status via `GET /skills`, plus session inspect/reset endpoints for demo recovery.
 - Automatic demo index creation on first server start.
 - Static frontend that updates frame galleries and generated video previews inline.
 - Tests covering search → cast → synthesize plus bridge health/chat behavior.
@@ -67,6 +68,14 @@ curl -X POST http://127.0.0.1:8000/ingest/frame \
   -F caption="a pipe starts leaking near a blue valve" \
   -F video_id="workshop_clip" \
   -F timestamp_s=12.4
+```
+
+## Runtime Checks
+
+```bash
+curl http://127.0.0.1:8000/skills
+curl http://127.0.0.1:8000/session/demo-session
+curl -X DELETE http://127.0.0.1:8000/session/demo-session
 ```
 
 ## Project Map
